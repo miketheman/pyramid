@@ -1,0 +1,41 @@
+{
+  "findings": [
+    {
+      "file": "src/pyramid/session.py",
+      "line": 70,
+      "severity": "HIGH",
+      "category": "insecure_deserialization",
+      "description": "PickleSerializer.loads() calls pickle.loads() on data from session cookies. Although deprecated since Pyramid 2.0, the class remains fully importable and functional. If a developer uses PickleSerializer with BaseCookieSessionFactory (which provides no integrity protection) or with SignedCookieSessionFactory with a weak/leaked secret, an attacker can achieve arbitrary code execution by crafting a malicious pickle payload in the session cookie.",
+      "exploit_scenario": "A developer configures their Pyramid app with BaseCookieSessionFactory(PickleSerializer()) or SignedCookieSessionFactory('weak-secret', serializer=PickleSerializer()). An attacker crafts a session cookie containing a malicious pickle payload (e.g., using __reduce__ to invoke os.system). When the server processes the request, pickle.loads() deserializes the payload, executing arbitrary commands on the server.",
+      "recommendation": "Remove the PickleSerializer class entirely or make it raise a hard error on use, pointing users to JSONSerializer. If backward compatibility is required, add prominent runtime deprecation warnings and never allow PickleSerializer with BaseCookieSessionFactory.",
+      "confidence": 0.85
+    },
+    {
+      "file": "src/pyramid/session.py",
+      "line": 221,
+      "severity": "MEDIUM",
+      "category": "session_tampering",
+      "description": "BaseCookieSessionFactory deserializes cookie data (line 221) using an arbitrary serializer with no signing or integrity verification. The cookie value is read directly from request.cookies and passed to serializer.loads() without any MAC or signature check. Any session data including CSRF tokens, authentication state, or application-specific data can be read and modified by the client.",
+      "exploit_scenario": "An application uses BaseCookieSessionFactory with JSONSerializer to store session data. An attacker base64-decodes the session cookie, modifies session state (e.g., changing an 'is_admin' flag or replacing the CSRF token with a known value), re-encodes it, and sends the forged cookie. The server accepts the tampered session data as legitimate because no integrity check is performed.",
+      "recommendation": "Add a deprecation warning or hard error when BaseCookieSessionFactory is used directly. Consider requiring a signing mechanism or removing the class from the public API. At minimum, add runtime checks to prevent it being used with PickleSerializer.",
+      "confidence": 0.80
+    },
+    {
+      "file": "src/pyramid/renderers.py",
+      "line": 298,
+      "severity": "MEDIUM",
+      "category": "xss",
+      "description": "The JSONP callback validation regex (JSONP_VALID_CALLBACK) permits square bracket characters in callback names, allowing expressions like 'obj[constructor]' or 'a[__proto__]'. The callback is interpolated directly into the JavaScript response on line 390 as '/**/{callback}({val});'. While the character set is restricted (no parentheses, quotes, or angle brackets), bracket notation enables JavaScript property access patterns that could facilitate prototype pollution or unexpected code execution in specific client contexts.",
+      "exploit_scenario": "An attacker requests a JSONP endpoint with ?callback=obj[__proto__][polluted]. The server returns '/**/obj[__proto__][polluted]({\"data\":...});' which, when executed as JavaScript in a vulnerable client application, could manipulate the prototype chain of objects. The strict character set limits direct XSS, but the bracket syntax expands the attack surface beyond standard dotted-name JSONP callbacks.",
+      "recommendation": "Tighten the JSONP_VALID_CALLBACK regex to only allow standard JavaScript identifiers separated by dots: r'^[$a-zA-Z_][$0-9a-zA-Z_]*(\\.$[a-zA-Z_][$0-9a-zA-Z_]*)*$'. Remove square bracket characters from the allowed set.",
+      "confidence": 0.80
+    }
+  ],
+  "analysis_summary": {
+    "files_reviewed": 42,
+    "high_severity": 1,
+    "medium_severity": 2,
+    "low_severity": 0,
+    "review_completed": true
+  }
+}
